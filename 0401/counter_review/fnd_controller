@@ -14,6 +14,7 @@ module fnd_controller (
     wire [3:0] w_digit_1, w_digit_10, w_digit_100, w_digit_1000;
     wire [3:0] w_bcd;
     wire [3:0] w_blink;
+    wire [7:0] w_seg;
 
 
     clk_div_1khz U_clk_div_1khz(
@@ -45,7 +46,7 @@ module fnd_controller (
     mux_4x1 U_mux_4x1(
         .sel(w_count),
         .x_0(w_digit_1),
-        .x_1(w_digit_10 & w_blink),
+        .x_1(w_digit_10),
         .x_2(w_digit_100),
         .x_3(w_digit_1000),
         .y(w_bcd)  
@@ -53,7 +54,7 @@ module fnd_controller (
 
     bcdtoseg U_bcdtoseg(
         .bcd(w_bcd), 
-        .seg(fnd_font)
+        .seg(w_seg)
     );
 
     clk_div_10hz U_clk_div_10hz(
@@ -62,11 +63,13 @@ module fnd_controller (
         .tick(w_tick_10hz)
     );
 
-    blink U_blick(
+    blink U_blink(
         .clk(clk),
         .reset(reset),
         .tick(w_tick_10hz),
-        .blink(w_blink)
+        .sel(w_count),
+        .seg(w_seg),
+        .seg_out(fnd_font)
     );
     
 endmodule
@@ -192,17 +195,28 @@ module blink(
     input clk,
     input reset,
     input tick,
-    output reg [3:0] blink
+    input [1:0] sel,
+    input [7:0] seg,
+    output reg [7:0] seg_out
 );
+    reg blink;
+
     always @(posedge clk, posedge reset) begin
         if(reset) begin
             blink <= 0;
         end
         else begin
             if (tick) 
-                blink <= 4'hE;
-            else 
-                blink <= 4'hf;    
+                blink <= ~ blink;
         end
+    end
+
+    always @(posedge clk or posedge reset) begin
+    if (reset)
+        seg_out <= 8'b0;
+    else if (sel == 2'b01)
+        seg_out <= {seg[7] & blink, seg[6:0]};
+    else
+        seg_out <= seg_out; 
     end
 endmodule
