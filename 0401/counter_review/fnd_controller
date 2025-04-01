@@ -1,0 +1,208 @@
+`timescale 1ns/1ps
+
+module fnd_controller (
+    input  clk,
+    input  reset,
+
+    input  [$clog2(10_000)-1:0] bcd,
+
+    output [3:0] fnd_comm,
+    output [7:0] fnd_font
+);
+    wire w_tick;
+    wire [1:0] w_count;
+    wire [3:0] w_digit_1, w_digit_10, w_digit_100, w_digit_1000;
+    wire [3:0] w_bcd;
+    wire [3:0] w_blink;
+
+
+    clk_div_1khz U_clk_div_1khz(
+        .clk(clk),
+        .reset(reset),
+        .tick(w_tick)
+    );
+
+    counter_2bit U_counter_2bit(
+        .clk(clk),
+        .reset(reset),
+        .tick(w_tick),
+        .count(w_count)
+    ); 
+
+    decoder_2x4 U_decoder_2x4(
+        .x(w_count),
+        .y(fnd_comm)
+    ); 
+
+    digit_splitter U_digit_splitter(
+        .data(bcd),
+        .digit_1(w_digit_1),
+        .digit_10(w_digit_10),
+        .digit_100(w_digit_100),
+        .digit_1000(w_digit_1000)
+    );
+
+    mux_4x1 U_mux_4x1(
+        .sel(w_count),
+        .x_0(w_digit_1),
+        .x_1(w_digit_10 & w_blink),
+        .x_2(w_digit_100),
+        .x_3(w_digit_1000),
+        .y(w_bcd)  
+    );
+
+    bcdtoseg U_bcdtoseg(
+        .bcd(w_bcd), 
+        .seg(fnd_font)
+    );
+
+    clk_div_10hz U_clk_div_10hz(
+        .clk(clk),
+        .reset(reset),
+        .tick(w_tick_10hz)
+    );
+
+    blink U_blick(
+        .clk(clk),
+        .reset(reset),
+        .tick(w_tick_10hz),
+        .blink(w_blink)
+    );
+    
+endmodule
+
+module clk_div_1khz (
+    input       clk,
+    input       reset,
+    output reg  tick
+);
+    reg [$clog2(100_000)-1:0] cnt;
+
+    always @(posedge clk, posedge reset) begin
+        if(reset) begin
+                cnt     <= 0;
+                tick    <= 1'b0;
+        end
+        else begin
+            if(cnt == 100_000 - 1) begin
+                cnt     <= 0;
+                tick    <= 1'b1; 
+            end
+            else begin
+                cnt     <= cnt + 1;
+                tick    <= 1'b0;
+            end
+        end
+    end    
+endmodule
+
+module counter_2bit (
+    input           clk,
+    input           reset,
+    input           tick,
+    output reg [1:0] count
+);
+    always @(posedge clk, posedge reset) begin
+        if(reset) begin
+            count <= 0;
+        end
+        else begin
+            if(tick) begin
+                count <= count + 1;
+            end
+        end       
+    end    
+endmodule
+
+module decoder_2x4 (
+    input       [1:0] x,
+    output reg  [3:0] y
+);   
+    always @(*) begin
+        case(x)
+        2'b00   : y = 4'b1110;
+        2'b01   : y = 4'b1101;
+        2'b10   : y = 4'b1011;
+        2'b11   : y = 4'b0111;
+        default : y = 4'b1110; 
+        endcase       
+    end
+endmodule
+
+module digit_splitter (
+    input   [$clog2(10_000)-1:0] data,
+    output  [3:0] digit_1,
+    output  [3:0] digit_10,
+    output  [3:0] digit_100,
+    output  [3:0] digit_1000
+);
+    assign digit_1      = data % 10;
+    assign digit_10     = data / 10 % 10;
+    assign digit_100    = data / 100 % 10;
+    assign digit_1000   = data / 1000 % 10;
+endmodule
+
+module mux_4x1 (
+    input      [1:0] sel,
+    input      [3:0] x_0,
+    input      [3:0] x_1,
+    input      [3:0] x_2,
+    input      [3:0] x_3,
+    output reg [3:0] y
+);
+    always @(*) begin
+        case(sel)
+        2'b00 :   y = x_0;
+        2'b01 :   y = x_1;
+        2'b10 :   y = x_2;
+        2'b11 :   y = x_3;
+        default : y = 4'hf;
+        endcase
+    end    
+endmodule
+
+module bcdtoseg(
+    input [3:0] bcd, 
+    output reg [7:0] seg
+);
+    always @(*) begin
+        case (bcd)
+            4'h0:    seg = 8'hc0;
+            4'h1:    seg = 8'hF9;
+            4'h2:    seg = 8'hA4;
+            4'h3:    seg = 8'hB0;
+            4'h4:    seg = 8'h99;
+            4'h5:    seg = 8'h92;
+            4'h6:    seg = 8'h82;
+            4'h7:    seg = 8'hf8;
+            4'h8:    seg = 8'h80;
+            4'h9:    seg = 8'h90;
+            4'hA:    seg = 8'h88;
+            4'hB:    seg = 8'h83;
+            4'hC:    seg = 8'hc6;
+            4'hD:    seg = 8'ha1;
+            4'hE:    seg = 8'h7f;
+            4'hF:    seg = 8'hff;
+            default: seg = 8'hff;
+        endcase
+    end
+endmodule
+
+module blink(
+    input clk,
+    input reset,
+    input tick,
+    output reg [3:0] blink
+);
+    always @(posedge clk, posedge reset) begin
+        if(reset) begin
+            blink <= 0;
+        end
+        else begin
+            if (tick) 
+                blink <= 4'hE;
+            else 
+                blink <= 4'hf;    
+        end
+    end
+endmodule
