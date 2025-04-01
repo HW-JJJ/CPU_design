@@ -1,0 +1,27 @@
+`timescale 1ns / 1ps
+
+module top_counter(
+    input        clk,
+    input        reset,
+    input        sw,
+    output [3:0] fnd_comm,
+    output [7:0] fnd_font
+    );
+
+    wire [$clog2(10_000)-1:0] w_count;
+
+    up_down_counter U_up_down_counter(
+        .clk(clk),
+        .reset(reset),
+        .sw(sw),
+        .count(w_count)
+    );
+
+    fnd_controller U_fnd_controller(
+        .clk(clk),
+        .reset(reset),
+        .bcd(w_count),
+        .fnd_comm(fnd_comm),
+        .fnd_font(fnd_font)
+    );
+endmodule
