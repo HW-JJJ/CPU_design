@@ -1,0 +1,74 @@
+// wire : tranfer line
+// reg  : memorize
+
+`timescale 1ns / 1ps
+
+module up_down_counter(
+    input clk,
+    input reset,
+    input sw,
+    output [$clog2(10_000)-1:0] count
+);
+    wire w_tick;
+
+    clk_div_10hz U_clk_div_10hz(
+        .clk(clk),
+        .reset(reset),
+        .tick(w_tick)
+    );
+
+    counter U_counter(
+        .clk(clk),
+        .reset(reset),
+        .tick(w_tick),
+        .mode(sw),
+        .cnt(count)
+    );
+endmodule
+
+module clk_div_10hz(
+    input clk,
+    input reset,
+    output reg tick
+);
+    reg [$clog2(10_000_000)-1:0] cnt;
+
+    always @(posedge clk, posedge reset) begin
+        if(reset) begin
+                cnt     <= 0;
+                tick    <= 1'b0;
+        end
+        else begin
+            if(cnt == 10_000_000 - 1) begin
+                cnt     <= 0;
+                tick    <= 1'b1; 
+            end
+            else begin
+                cnt     <= cnt + 1;
+                tick    <= 1'b0;
+            end
+        end
+    end    
+endmodule
+
+module counter (
+    input clk,
+    input reset,
+    input tick,
+    input mode,
+    output reg [$clog2(10_000)-1:0] cnt
+);
+    always @(posedge clk, posedge reset) begin
+        if (reset) begin
+            cnt <= 0;
+        end
+        else begin
+            if(tick) begin
+                if(mode == 1'b0)
+                    cnt <= (cnt == 9999) ? 0 : cnt + 1;
+                else
+                    cnt <= (cnt == 0) ? 9999 : cnt - 1;
+            end
+        end
+    end
+endmodule
