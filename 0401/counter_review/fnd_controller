@@ -217,6 +217,6 @@ module blink(
     else if (sel == 2'b01)
         seg_out <= {seg[7] & blink, seg[6:0]};
     else
-        seg_out <= seg_out; 
+        seg_out <= seg; 
     end
 endmodule
