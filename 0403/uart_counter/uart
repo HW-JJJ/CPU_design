@@ -1,0 +1,323 @@
+`timescale 1ns / 1ps
+
+module uart(
+    input        clk,
+    input        reset,
+    // rx port
+    input        rx,
+    output [7:0] rx_data,
+    output       rx_done,
+
+    // tx port
+    input [7:0]  tx_data,
+    input        tx_start,
+    output       tx,
+    output       tx_done,
+    output       tx_busy
+    );
+    
+    wire br_tick;
+
+    baudrate_gen U_baudrate_gen(
+        .clk(clk),
+        .reset(reset),
+        .br_tick(br_tick)
+    );  
+
+    uart_tx U_uart_tx(
+        .clk(clk),
+        .reset(reset),
+        .tick(br_tick),
+        .tx_start(tx_start),
+        .tx_data(tx_data),
+
+        .tx(tx),
+        .tx_done(tx_done),
+        .tx_busy(tx_busy)
+    );
+
+    uart_rx U_uart_rx(
+        .clk(clk),
+        .reset(reset),
+        .tick(br_tick),
+        .rx(rx),
+
+        .rx_data(rx_data),
+        .rx_done(rx_done)
+    );
+endmodule
+
+module uart_tx (
+    input       clk,
+    input       reset,
+    input       tick,
+    input       tx_start,
+    input [7:0] tx_data,
+
+    output reg  tx,
+    output      tx_done,
+    output      tx_busy
+);
+    localparam      IDLE  = 2'b00,
+                    START = 2'b01,
+                    DATA  = 2'b10,
+                    STOP  = 2'b11;
+    
+    reg tx_busy_reg, tx_busy_next, tx_done_reg, tx_done_next;
+    reg [1:0] state, next;
+    reg [2:0] bit_count_reg, bit_count_next;
+    reg [3:0] tick_count_reg, tick_count_next;
+    reg [7:0] temp_data_reg, temp_data_next;
+
+    assign tx_done = tx_done_reg;
+    assign tx_busy = tx_busy_reg;
+ 
+    always @(posedge clk, posedge reset) begin
+        if (reset) begin
+            state          <= IDLE;
+            bit_count_reg  <= 0;
+            temp_data_reg  <= 0;
+            tick_count_reg <= 0;
+            tx_busy_reg    <= 1'b0;
+            tx_done_reg    <= 1'b0;
+        end     
+        else begin
+            state          <= next;
+            bit_count_reg  <= bit_count_next;
+            tick_count_reg <= tick_count_next;
+            temp_data_reg  <= temp_data_next;
+            tx_busy_reg    <= tx_busy_next;
+            tx_done_reg    <= tx_done_next;
+        end        
+    end
+/*  critical error if use sequential logic
+
+    why?
+
+    always @(posedge clk, posedge reset) begin
+        if (reset) begin
+            temp_data <= 0;
+        end
+        else begin
+            next      <= state;
+            temp_data <= temp_data;
+
+            case (state)
+                IDLE : begin
+                    tx <= 1'b1;
+
+                    if(tx_start) begin
+                        next      <= START;
+                        temp_data <= tx_data; 
+                    end    
+                end 
+*/
+    always @(*) begin
+        next            = state;
+        temp_data_next  = temp_data_reg;
+        bit_count_next  = bit_count_reg;
+        tick_count_next = tick_count_reg;
+        tx_busy_next    = tx_busy_reg;
+        tx_done_next    = tx_done_reg;
+
+        case(state)
+            IDLE : begin                
+                tx           = 1'b1;
+                tx_busy_next = 1'b0;
+                tx_done_next = 1'b0;
+
+                if (tx_start) begin
+                    next            = START;
+                    temp_data_next  = tx_data;
+                    tx_busy_next    = 1'b1;
+                end
+            end       
+
+            START : begin
+                tx = 1'b0;
+
+                if (tick) begin
+                    if(tick_count_reg == 15) begin
+                        next            = DATA;
+                        tick_count_next = 0;
+                    end
+                    else begin
+                        tick_count_next = tick_count_reg + 1;
+                    end
+                end
+            end
+
+            DATA : begin // tx_data LSB 1 bit out to tx by use SR 
+                
+                tx = temp_data_reg[0];
+
+                if(tick) begin
+                    if(tick_count_reg == 15) begin
+
+                        tick_count_next = 0;
+
+                        if(bit_count_reg == 7) begin
+                            next           = STOP;
+                            bit_count_next = 0;
+                        end
+                        else begin
+                            bit_count_next = bit_count_reg + 1;
+                            temp_data_next = {1'b0,temp_data_reg[7:1]}; // SR
+                        end
+                    end
+                    else begin
+                        tick_count_next = tick_count_reg + 1;
+                    end
+                end
+
+            end
+
+            STOP : begin
+                tx = 1'b1;
+                
+                if(tick) begin
+                    if(tick_count_reg == 15) begin
+                        next            = IDLE;
+                        tick_count_next = 0;
+                        tx_done_next    = 1'b1;
+                    end
+                    else begin
+                        tick_count_next = tick_count_reg + 1;
+                    end
+                end
+            end
+        endcase
+    end    
+endmodule
+
+module uart_rx (
+    input        clk,
+    input        reset,
+    input        tick,
+    input        rx,
+
+    output [7:0] rx_data,
+    output  reg  rx_done
+);
+
+    localparam  IDLE  = 2'b00,
+                START = 2'b01,
+                DATA  = 2'b10,
+                STOP  = 2'b11;
+
+    reg [1:0] state, next;
+    reg [2:0] bit_count_reg, bit_count_next;
+    reg [3:0] tick_count_reg, tick_count_next;
+    reg [7:0] temp_data_reg, temp_data_next;
+
+    assign rx_data = temp_data_reg;
+
+    always @(posedge clk, posedge reset) begin
+        if (reset) begin
+            state          <= IDLE;
+            bit_count_reg  <= 0;
+            tick_count_reg <= 0;
+            temp_data_reg  <= 0;
+        end
+        else begin
+            state           <= next;
+            bit_count_reg   <= bit_count_next;
+            tick_count_reg  <= tick_count_next;
+            temp_data_reg   <= temp_data_next;
+        end        
+    end
+
+    always @(*) begin
+        next            = state;
+        bit_count_next  = bit_count_reg;
+        tick_count_next = tick_count_reg;
+        temp_data_next  = temp_data_reg;
+        rx_done = 1'b0;
+
+        case (state)
+            IDLE : begin
+                if (rx == 1'b0) begin
+                    next            = START;
+                    bit_count_next  = 0;
+                    tick_count_next = 0;
+                    temp_data_next  = 0;
+                end
+            end
+
+            START : begin
+                if(tick) begin
+                    if(tick_count_reg == 15) begin
+                        next = DATA;
+                        tick_count_next = 0;
+                    end
+                    else begin
+                        tick_count_next = tick_count_reg + 1;
+                    end
+                end
+            end
+
+            DATA : begin
+                if(tick) begin
+                    if(tick_count_reg == 15) begin
+                        temp_data_next = {rx, temp_data_reg[7:1]};
+                        tick_count_next = 0;
+
+                        if(bit_count_reg == 7) begin
+                            next           = STOP;
+                            bit_count_next = 0;
+                        end
+                        else begin
+                            bit_count_next = bit_count_reg + 1;
+                        end
+                    end
+                    else begin
+                        tick_count_next = tick_count_reg + 1;
+                    end
+                end
+            end
+
+            STOP : begin
+                if(tick) begin
+                    if(tick_count_reg == 15) begin
+                        next            = IDLE;
+                        rx_done         = 1'b1;
+                        tick_count_next = 0;
+                    end
+                    else begin
+                        tick_count_next = tick_count_reg + 1;
+                    end
+                end
+            end
+        endcase        
+    end    
+endmodule
+
+module baudrate_gen (
+    input       clk,
+    input       reset,
+    output reg  br_tick
+);  
+
+    localparam  BAUD_RATE = 9600,
+                STD_CLK   = 100_000_000, // 100MHz
+                SAMPLE    = 16;
+
+    reg [$clog2(STD_CLK / BAUD_RATE / SAMPLE)-1:0] counter;
+
+    always @(posedge clk, posedge reset) begin
+        if (reset) begin
+            counter <= 0;
+            br_tick <= 1'b0;
+        end
+        else begin
+            if(counter == STD_CLK / BAUD_RATE / SAMPLE - 1) begin
+                counter <= 0;
+                br_tick <= 1'b1;
+            end
+            else begin
+                counter <= counter + 1;
+                br_tick <= 1'b0;
+            end
+        end
+    end
+endmodule
