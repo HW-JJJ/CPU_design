@@ -1,0 +1,26 @@
+`timescale 1ns / 1ps
+
+module tb_counter_dedicated_processor;
+
+    reg clk;
+    reg reset;
+    wire [7:0] outPort;
+
+    top_counter_dedicated_processor U_top_counter_dedicated_processor(
+        .clk(clk),
+        .reset(reset),
+        .outPort(outPort)
+    );
+
+    always #5 clk = ~clk;
+
+    initial begin
+        clk = 0; reset = 1;
+
+        #10;
+        reset = 0;
+
+        #100;
+        #10 $finish;
+    end
+endmodule
