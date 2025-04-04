@@ -1,0 +1,32 @@
+`timescale 1ns / 1ps
+
+module top_counter_dedicated_processor(
+    input clk,
+    input reset,
+    output [7:0] outPort
+    );
+
+    wire AsrcMuxSel,
+         AEn,
+         ALt10,
+         OutBuf;
+
+    ControllUnit U_ControllUnit(
+        .clk(clk),
+        .reset(reset),
+        .AsrcMuxSel(AsrcMuxSel),
+        .AEn(AEn),
+        .ALt10(ALt10),
+        .OutBuf(OutBuf)
+    );
+
+    DataPath U_DataPath(
+        .clk(clk),
+        .reset(reset),
+        .AsrcMuxSel(AsrcMuxSel),
+        .AEn(AEn),
+        .ALt10(ALt10),
+        .OutBuf(OutBuf),
+        .outPort(outPort)
+    );  
+endmodule
