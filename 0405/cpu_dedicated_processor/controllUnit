@@ -27,7 +27,10 @@ module ControllUnit(
     end
 
     always_comb begin  // always_comb == always @(*)
-        next = state;
+        next        = state;
+        AsrcMuxSel  = 1'b0;
+        AEn         = 1'b0;
+        OutBuf      = 1'b0;
 
         case(state)
             S0 : begin
