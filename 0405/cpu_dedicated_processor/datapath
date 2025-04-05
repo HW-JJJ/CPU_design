@@ -10,10 +10,9 @@ module DataPath (
     output logic [7:0]  outPort
 );  
     wire [7:0] d, q, sum;
-    wire i;
 
     mux U_mux(
-        .a(i),
+        .a(sum),
         .b(8'd0),
         .AsrcMuxSel(AsrcMuxSel),
         .d(d)
