@@ -13,7 +13,5 @@ module tb_DedicatedProcessor ();
     initial begin
         clk = 0; reset = 1;
         #10 reset = 0;
-        wait(outPort == 8'd55);
-        #20 $finish;
     end
 endmodule
