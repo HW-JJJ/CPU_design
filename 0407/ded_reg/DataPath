@@ -10,7 +10,7 @@ module DataPath (
     input  logic [2:0] alu_op,
     input  logic       writeEn,
     input  logic       outBuf,
-    output logic       iLe10,
+    output logic       lt,
     output logic [7:0] outPort
 );
     logic [7:0] Result, RFSrcMuxData, RFReadData1, RFReadData2;
@@ -33,10 +33,10 @@ module DataPath (
         .rData2(RFReadData2)
     );
 
-    comparator U_Comp_iLe10 (
+    comparator U_Comp_lt (
         .a (RFReadData1),
-        .b (8'd10),
-        .le(iLe10)
+        .b (RFReadData2),
+        .le(lt)
     );
 
     ALU U_ALU (
