@@ -10,7 +10,7 @@ module ControlUnit (
     output logic [2:0] alu_op,
     output logic       writeEn,
     output logic       outBuf,
-    input  logic       LT
+    input  logic       lt
 );
     typedef enum { S0, S1, S2, S3, S4, S5, S6, S7, S8, S9, S10, 
                    S11, S12, S13, S14, S15, S16, S17, S18 } state_e;
@@ -47,67 +47,67 @@ module ControlUnit (
                 state_next  = S4;
             end
             S4: begin // outport = R4
-                out_signals = 15'b0_000_000_000_0_000_1;
+                out_signals = 15'b0_100_000_000_0_000_1;
                 state_next  = S5;
             end
             S5: begin // R5 = R4 + R4
-                out_signals = 15'b0_010_001_010_1_000_0;
+                out_signals = 15'b0_100_100_101_1_000_0;
                 state_next  = S6;
             end
             S6: begin // outport = R5
-                out_signals = 15'b0_001_000_000_0_000_1;
+                out_signals = 15'b0_101_000_000_0_000_1;
                 state_next  = S7;
             end
             S7: begin // R6 = R5 - R1
-                out_signals = 15'b0_001_011_001_1_000_0;
+                out_signals = 15'b0_101_001_110_1_001_0;
                 state_next  = S8;
             end
             S8: begin // outport = R6
-                out_signals = 15'b0_001_000_000_0_000_1;
+                out_signals = 15'b0_110_000_000_0_000_1;
                 state_next  = S9;
             end
             S9: begin // R2 = R6 & R4
-                out_signals = 15'b0_010_000_000_0_000_1;
+                out_signals = 15'b0_110_100_010_1_010_0;
                 state_next  = S10;
             end
             S10: begin // outport = R2
-                out_signals = 15'b0_001_000_000_0_000_1;
+                out_signals = 15'b0_010_000_000_0_000_1;
                 state_next = S11;
             end
             S11: begin // R3 = R2 | R5
-                out_signals = 15'b0_001_000_000_0_000_1;
+                out_signals = 15'b0_010_101_011_1_011_0;
                 state_next = S12;
             end
             S12: begin // outport = R3
-                out_signals = 15'b0_001_000_000_0_000_1;
+                out_signals = 15'b0_011_000_000_0_000_1;
                 state_next = S13;
             end
             S13: begin  // R7 = R3 ^ R5
-                out_signals = 15'b0_000_000_000_0_000_0;
+                out_signals = 15'b0_011_101_111_1_100_0;
                 state_next     = S14;
             end
             S14: begin // outport = R7
-                out_signals = 15'b0_001_000_000_0_000_1;
+                out_signals = 15'b0_111_000_000_0_000_1;
                 state_next = S15;
             end
             S15: begin // R4 = ~R7
-                out_signals = 15'b0_001_000_000_0_000_1;
+                out_signals = 15'b0_111_000_100_1_101_0;
                 state_next = S16;
             end
             S16: begin // outport = R4
-                out_signals = 15'b0_001_000_000_0_000_1;
+                out_signals = 15'b0_100_000_000_0_000_1;
                 state_next = S17;
             end
             S17: begin // LT IF(R7>R4) GO S4
-                out_signals = 15'b0_001_000_000_0_000_1;
+                out_signals = 15'b0_111_100_000_0_000_0;
                 
-                if(LT)
-                    state_next = S4;
+                if(lt)
+                    state_next = S5;
                 else
                     state_next = S18;
             end
             S18: begin // halt
-                out_signals = 15'b0_001_000_000_0_000_1;
+                out_signals = 15'b0_000_000_000_0_000_0;
                 state_next = S18;
             end
         endcase
