@@ -1,0 +1,112 @@
+`timescale 1ns / 1ps
+
+module ControllUnit(
+    input  logic clk,
+    input  logic reset,
+    output logic SumSrcMuxSel,
+    output logic iSrcMuxSel,
+    output logic AdderSrcMuxSel,
+    output logic SumEn,
+    output logic iEn,
+    input  logic Iled10,
+    output logic OutBuf
+    );
+
+    /*
+    localparam  S0 = 3'd0,
+                S1 = 3'd1,
+                S2 = 3'd2,
+                S3 = 3'd3,
+                S4 = 3'd4,
+                S5 = 3'd5;
+    */
+
+    typedef enum {S0, S1, S2, S3, S4, S5  } state_e;
+
+    state_e state, next;
+    
+    always_ff @(posedge clk, posedge reset) begin
+        if(reset) begin
+            state <= S0;
+        end
+        else begin
+            state <= next;
+        end
+    end
+
+    always_comb begin 
+        next = state;
+        SumSrcMuxSel   = 0;
+        iSrcMuxSel     = 0;
+        SumEn          = 0;
+        iEn            = 0;
+        AdderSrcMuxSel = 0;
+        OutBuf         = 0;
+
+        case(state)
+            S0 : begin
+                SumSrcMuxSel   = 0;
+                iSrcMuxSel     = 0;
+                SumEn          = 1;
+                iEn            = 1;
+                AdderSrcMuxSel = 1'bx;
+                OutBuf         = 0;
+                next           = S1;
+            end 
+
+            S1 : begin
+                SumSrcMuxSel   = 1'bx;
+                iSrcMuxSel     = 1'bx;
+                SumEn          = 0;
+                iEn            = 0;
+                AdderSrcMuxSel = 1'bx;
+                OutBuf         = 0;
+
+                if(Iled10)
+                    next = S2;
+                else 
+                    next = S5;
+            end
+
+            S2 : begin
+                SumSrcMuxSel   = 1;
+                iSrcMuxSel     = 1'bx;
+                SumEn          = 1;
+                iEn            = 0;
+                AdderSrcMuxSel = 0;
+                OutBuf         = 0;
+                next           = S3;
+            end
+
+            S3 : begin
+                SumSrcMuxSel   = 1'bx;
+                iSrcMuxSel     = 1;
+                SumEn          = 0;
+                iEn            = 1;
+                AdderSrcMuxSel = 1;
+                OutBuf         = 0;
+                next           = S4;
+            end
+
+            S4 : begin
+                SumSrcMuxSel   = 1'bx;
+                iSrcMuxSel     = 1'bx;
+                SumEn          = 1;
+                iEn            = 1;
+                AdderSrcMuxSel = 1'bx;
+                OutBuf         = 1;
+                next           = S1;
+            end
+
+            S5 : begin  //halt
+                SumSrcMuxSel   = 1'bx;
+                iSrcMuxSel     = 1'bx;
+                SumEn          = 0;
+                iEn            = 0;
+                AdderSrcMuxSel = 1'bx;
+                OutBuf         = 0;
+                next           = S5;
+            end
+        endcase
+    end
+endmodule
