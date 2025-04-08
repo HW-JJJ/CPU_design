@@ -1,0 +1,179 @@
+`timescale 1ns / 1ps
+
+// 여러 신호(signal)나 변수들을 하나의 단위로 묶어주어 모듈 간의 연결을 단순화하고 관리하기 위한 구조
+interface ram_intf ( 
+    input bit clk
+); // type bit : 2state(0,1) , logic : 4state(0,1,x,z)
+    
+    logic [4:0] addr;
+    logic [7:0] wData;
+    logic [7:0] rData;
+    logic       we;
+
+    clocking cb @(posedge clk);  // 'cb'라는 클로킹 블록 => 타이밍을 맞추기 위한
+        default input #1 output #1; // testbench 기준으로 항상 신호를 생각해야
+        output addr, wData, we;     // "testbench 기준" 나가는 신호호
+        input  rData;               // "testbench 기준" 받는 신호
+    endclocking
+endinterface //ram_intf
+
+class transaction;          // purpose : randomize
+    rand logic [4:0] addr;
+    rand logic [7:0] wData;
+    rand logic       we;
+    logic      [7:0] rData;
+
+    task display(string name);   // mailbox안에 담는 형태가 string name);
+        $display("[%S] addr = %h , wData = %h, we = %d, rData = %h", name, addr,wData,we,rData);        
+    endtask //display(string name)
+endclass
+
+class generator;            // 필요한것 transaction, mailbox
+    mailbox #(transaction) GenToDrv_mbox;   // mailbox에 담는 형태를 transaction으로 정의 및 연결
+
+    function new(mailbox #(transaction) GenToDrv_mbox);
+        this.GenToDrv_mbox = GenToDrv_mbox;         // 매개변수에서 불러온 tr 값 불러옴옴
+    endfunction
+
+    task run(int repeat_counter);
+        transaction ram_tr;
+        repeat (repeat_counter) begin
+           ram_tr = new();                          //생성하고
+           if (!ram_tr.randomize())                 // mailbox 
+                $error("Randomization Failed!");
+            ram_tr.display("GEN");
+            GenToDrv_mbox.put(ram_tr);
+            #20;
+        end    
+    endtask
+endclass
+
+class driver;
+
+    mailbox #(transaction) GenToDrv_mbox;
+    virtual ram_intf ram_if;
+
+    function new(mailbox #(transaction) GenToDrv_mbox,virtual ram_intf ram_if);
+        this.GenToDrv_mbox = GenToDrv_mbox;
+        this.ram_if        = ram_if;
+    endfunction //new()
+
+    task run();
+        transaction ram_tr;
+
+        forever begin
+            @(ram_if.cb);
+            GenToDrv_mbox.get(ram_tr);         //읽어오고 
+            ram_if.cb.addr    <= ram_tr.addr;   //ram_if.addr  = ram_tr.addr;    우측:HW , 좌측:SW
+            ram_if.cb.wData   <= ram_tr.wData;  //ram_if.wData = ram_tr.wData;
+            ram_if.cb.we      <= ram_tr.we;     // WRITE 신호 주고
+            ram_tr.display("DRV");
+            @(ram_if.cb);         
+            ram_if.cb.we      <= 1'b0;            // 신호를 다시 0으로 만들었는데? TESTBENCH에선 이상함
+        end                                 // RACE condition
+    endtask
+endclass //driver
+
+class monitor;
+    mailbox #(transaction) MonToSCB_mbox;
+    virtual ram_intf ram_if;
+
+    function new(mailbox #(transaction) MonToSCB_mbox, virtual ram_intf ram_if);
+        this.MonToSCB_mbox = MonToSCB_mbox;
+        this.ram_if        = ram_if;
+    endfunction
+
+    // 인터페이스를 
+    task run();
+        transaction ram_tr;
+
+        forever begin
+            @(ram_if.cb);           // 우측 : sw ,좌측 : hw
+            ram_tr       = new();
+            ram_tr.addr  = ram_if.addr;
+            ram_tr.wData = ram_if.wData;
+            ram_tr.we    = ram_if.we;
+            ram_tr.rData = ram_if.rData;
+            ram_tr.display("MON");
+            MonToSCB_mbox.put(ram_tr);
+        end            
+    endtask //automatic
+endclass
+
+class scoreboard;               // reference model이 dut와 맞는지 비교교
+    mailbox #(transaction) MonToSCB_mbox;
+
+    logic [7:0] ref_model[0:2**5-1];
+
+    function new(mailbox #(transaction) MonToSCB_mbox);
+        this.MonToSCB_mbox = MonToSCB_mbox;
+        foreach (ref_model[i])
+            ref_model[i] = 0;
+    endfunction //new()
+
+    task run();
+        transaction ram_tr;
+
+        forever begin
+            MonToSCB_mbox.get(ram_tr);
+            ram_tr.display("SCB");
+            if (ram_tr.we) begin                            // write
+                ref_model[ram_tr.addr] = ram_tr.wData;
+            end
+            else begin                                      // read
+                if (ref_model[ram_tr.addr] == ram_tr.rData) begin
+                    $display("PASS Matched Data! ref_model = %h === rData = %h", ref_model[ram_tr.addr], ram_tr.rData);
+                end
+                else begin
+                    $display("Fail DisMatched Data! ref_model = %h !== rData = %h", ref_model[ram_tr.addr], ram_tr.rData);
+                end
+            end
+        end
+    endtask    
+endclass //scoreboard
+
+class environment;          // class 연결
+    mailbox #(transaction) GenToDrv_mbox;
+    mailbox #(transaction) MonToSCB_mbox;
+    generator   ram_gen;
+    driver      ram_drv;
+    monitor     ram_mon;
+    scoreboard  ram_scb;
+
+    function new(virtual ram_intf ram_if);
+        GenToDrv_mbox = new();
+        MonToSCB_mbox = new();
+        ram_gen       = new(GenToDrv_mbox);
+        ram_drv       = new(GenToDrv_mbox,ram_if);
+        ram_mon       = new(MonToSCB_mbox,ram_if);
+        ram_scb       = new(MonToSCB_mbox);
+    endfunction //new()
+
+    task run(int count);
+        fork
+            ram_gen.run(count);
+            ram_drv.run();
+            ram_mon.run();
+            ram_scb.run();
+        join_any  // 위 thread 중 하나라도 끝나면 다음 실행
+    endtask
+endclass 
+
+module tb_RAM;
+    bit clk;
+    environment env;
+
+    ram_intf ram_if(clk);          
+
+    RAM dut (.intf(ram_if));
+
+    always #5 clk = ~clk;
+
+    initial begin
+        clk = 0;
+        env = new(ram_if);
+        env.run(10);
+        #50;
+        $finish;
+    end    
+endmodule
