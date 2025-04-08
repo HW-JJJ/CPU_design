@@ -1,5 +1,6 @@
 `timescale 1ns / 1ps
 
+// INTERFACE
 // 여러 신호(signal)나 변수들을 하나의 단위로 묶어주어 모듈 간의 연결을 단순화하고 관리하기 위한 구조
 interface ram_intf ( 
     input bit clk
@@ -17,6 +18,7 @@ interface ram_intf (
     endclocking
 endinterface //ram_intf
 
+// TRANSACTION  
 class transaction;          // purpose : randomize
     rand logic [4:0] addr;
     rand logic [7:0] wData;
@@ -28,6 +30,7 @@ class transaction;          // purpose : randomize
     endtask //display(string name)
 endclass
 
+// GENERATOR
 class generator;            // 필요한것 transaction, mailbox
     mailbox #(transaction) GenToDrv_mbox;   // mailbox에 담는 형태를 transaction으로 정의 및 연결
 
@@ -48,6 +51,7 @@ class generator;            // 필요한것 transaction, mailbox
     endtask
 endclass
 
+// DRIVER
 class driver;
 
     mailbox #(transaction) GenToDrv_mbox;
@@ -74,6 +78,7 @@ class driver;
     endtask
 endclass //driver
 
+// MONITOR
 class monitor;
     mailbox #(transaction) MonToSCB_mbox;
     virtual ram_intf ram_if;
@@ -100,7 +105,8 @@ class monitor;
     endtask //automatic
 endclass
 
-class scoreboard;               // reference model이 dut와 맞는지 비교교
+// SCOREBOARD
+class scoreboard;               // reference model이 dut와 맞는지 비교
     mailbox #(transaction) MonToSCB_mbox;
 
     logic [7:0] ref_model[0:2**5-1];
