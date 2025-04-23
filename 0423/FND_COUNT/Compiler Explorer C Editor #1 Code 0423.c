@@ -11,27 +11,29 @@ typedef struct {
 typedef struct {
     __IO uint32_t FCR;
     __IO uint32_t FDR;
-} FND_CNT_TypeDef;
+} FNDC_TypeDef;
 
 #define APB_BASEADDR 0x10000000
 #define GPIOD_BASEADDR  (APB_BASEADDR + 0x4000)
-#define FND_CNT_BASEADDR  (APB_BASEADDR + 0x5000)
+#define FNDC_BASEADDR  (APB_BASEADDR + 0x5000)
 
 #define GPIOD       ((GPIO_TypeDef *) GPIOD_BASEADDR)
-#define FNDC        ((FND_CNT_TypeDef *) FND_CNT_BASEADDR)
+#define FNDC        ((FNDC_TypeDef *) FNDC_BASEADDR)
 
 #define FNDC_ON      1
 #define FNDC_OFF     0
 
 void Switch_init(GPIO_TypeDef *GPIOx);
 uint32_t Switch_read(GPIO_TypeDef *GPIOx);
-void FNDC_init(FND_CNT_TypeDef *fndC, uint32_t ON_OFF);
-void FNDC_writeData(FND_CNT_TypeDef *fndC, uint32_t data);
+void FNDC_init(FNDC_TypeDef *fndC, uint32_t ON_OFF);
+void FNDC_writeData(FNDC_TypeDef *fndC, uint32_t data);
 void delay(int n);
 
 int main()
 {
     Switch_init(GPIOD);
+    FNDC_init(FNDC, FNDC_ON);
+
 	uint32_t cnt = 0;
 	
 	while(1)
@@ -73,10 +75,10 @@ uint32_t Switch_read(GPIO_TypeDef *GPIOx)
     return GPIOx-> IDR;
 }
 
-void FNDC_init(FND_CNT_TypeDef *fndC, uint32_t ON_OFF){
+void FNDC_init(FNDC_TypeDef *fndC, uint32_t ON_OFF){
     fndC->FCR = ON_OFF;
 }
 
-void FNDC_writeData(FND_CNT_TypeDef *fndC, uint32_t data){
+void FNDC_writeData(FNDC_TypeDef *fndC, uint32_t data){
     fndC->FDR = data;
 }
