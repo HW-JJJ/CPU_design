@@ -79,6 +79,89 @@ void TIM_writePresacler(TIM_TypeDef *tim, uint32_t psc);
 void TIM_writeAutoReload(TIM_TypeDef *tim, uint32_t arr);
 void TIM_clear(TIM_TypeDef *tim);
 
+void func1(uint32_t *prevTime, uint32_t *data);
+void func2(uint32_t *prevTime, uint32_t *data);
+void func3(uint32_t *prevTime, uint32_t *data);
+void func4(uint32_t *prevTime, uint32_t *data);
+void power(uint32_t *prevTime, uint32_t *data);
+
+enum {FUNC1, FUNC2, FUNC3, FUNC4};
+
+int main()
+{
+	uint32_t func1PrevTime = 0;
+	uint32_t func1Data = 0;
+	uint32_t func2PrevTime = 0;
+	uint32_t func2Data = 0;
+	uint32_t func3PrevTime = 0;
+	uint32_t func3Data = 0;
+	uint32_t func4PrevTime = 0;
+	uint32_t func4Data = 0;
+	uint32_t powerPrevTime = 0;
+	uint32_t powerData = 0;
+	
+	LED_init(GPIOC);
+	Switch_init(GPIOD);
+	Button_init(GPIOD);
+	//FND_init(FND, FND_ON);
+	TIM_writePresacler(TIM0, 100000-1);
+	TIM_writeAutoReload(TIM0, 0xffffffff);
+	TIM_start(TIM0);
+	
+	uint32_t state = FUNC1;
+
+	while(1)
+	{
+		power(&powerPrevTime, &powerData);
+		
+		switch(state)
+		{
+			case FUNC1:
+				func1(&func1PrevTime, &func1Data);
+			break;
+			case FUNC2:
+				func2(&func2PrevTime, &func2Data);
+			break;
+			case FUNC3:
+				func3(&func3PrevTime, &func3Data);
+			break;
+			case FUNC4:
+				func4(&func4PrevTime, &func4Data);
+			break;
+		}
+
+		switch(state)
+		{
+			case FUNC1:
+				if (Button_getState(GPIOD) & (1<<BUTTON_2)) state = FUNC2;
+				else if (Button_getState(GPIOD) & (1<<BUTTON_3)) state = FUNC3;
+				else if (Button_getState(GPIOD) & (1<<BUTTON_4)) state = FUNC4;
+				else state = FUNC1;
+			break;
+			case FUNC2:
+				if (Button_getState(GPIOD) & (1<<BUTTON_1)) state = FUNC1;
+				else if (Button_getState(GPIOD) & (1<<BUTTON_3)) state = FUNC3;
+				else if (Button_getState(GPIOD) & (1<<BUTTON_4)) state = FUNC4;
+				else state = FUNC2;
+			break;
+			case FUNC3:
+				if (Button_getState(GPIOD) & (1<<BUTTON_1)) state = FUNC1;
+				else if (Button_getState(GPIOD) & (1<<BUTTON_2)) state = FUNC2;
+				else if (Button_getState(GPIOD) & (1<<BUTTON_4)) state = FUNC4;
+				else state = FUNC3;
+			break;
+			case FUNC4:
+				if (Button_getState(GPIOD) & (1<<BUTTON_1)) state = FUNC1;
+				else if (Button_getState(GPIOD) & (1<<BUTTON_2)) state = FUNC2;
+				else if (Button_getState(GPIOD) & (1<<BUTTON_3)) state = FUNC3;
+				else state = FUNC4;
+			break;
+		}
+	}
+	return 0;
+}
+
+// FUNCTION 
 void func1(uint32_t *prevTime, uint32_t *data)
 {
 	uint32_t curTime = TIM_readCounter(TIM0);
@@ -130,81 +213,6 @@ void power(uint32_t *prevTime, uint32_t *data)
 	LED_write(GPIOD, *data);
 }
 
-enum {FUNC1, FUNC2, FUNC3, FUNC4};
-
-int main()
-{
-	uint32_t func1PrevTime = 0;
-	uint32_t func1Data = 0;
-	uint32_t func2PrevTime = 0;
-	uint32_t func2Data = 0;
-	uint32_t func3PrevTime = 0;
-	uint32_t func3Data = 0;
-	uint32_t func4PrevTime = 0;
-	uint32_t func4Data = 0;
-	uint32_t powerPrevTime = 0;
-	uint32_t powerData = 0;
-	
-    LED_init(GPIOC);
-    Switch_init(GPIOD);
-    Button_init(GPIOD);
-    //FND_init(FND, FND_ON);
-	TIM_writePresacler(TIM0, 100000-1);
-	TIM_writeAutoReload(TIM0, 0xffffffff);
-	TIM_start(TIM0);
-	
-	uint32_t state = FUNC1;
-
-    while(1)
-    {
-		power(&powerPrevTime, &powerData);
-		
-        switch(state)
-		{
-			case FUNC1:
-				func1(&func1PrevTime, &func1Data);
-			break;
-			case FUNC2:
-				func2(&func2PrevTime, &func2Data);
-			break;
-			case FUNC3:
-				func3(&func3PrevTime, &func3Data);
-			break;
-			case FUNC4:
-				func4(&func4PrevTime, &func4Data);
-			break;
-		}
-
-        switch(state)
-		{
-			case FUNC1:
-				if (Button_getState(GPIOD) & (1<<BUTTON_2)) state = FUNC2;
-				else if (Button_getState(GPIOD) & (1<<BUTTON_3)) state = FUNC3;
-				else if (Button_getState(GPIOD) & (1<<BUTTON_4)) state = FUNC4;
-				else state = FUNC1;
-			break;
-			case FUNC2:
-				if (Button_getState(GPIOD) & (1<<BUTTON_1)) state = FUNC1;
-				else if (Button_getState(GPIOD) & (1<<BUTTON_3)) state = FUNC3;
-				else if (Button_getState(GPIOD) & (1<<BUTTON_4)) state = FUNC4;
-				else state = FUNC2;
-			break;
-			case FUNC3:
-				if (Button_getState(GPIOD) & (1<<BUTTON_1)) state = FUNC1;
-				else if (Button_getState(GPIOD) & (1<<BUTTON_2)) state = FUNC2;
-				else if (Button_getState(GPIOD) & (1<<BUTTON_4)) state = FUNC4;
-				else state = FUNC3;
-			break;
-			case FUNC4:
-				if (Button_getState(GPIOD) & (1<<BUTTON_1)) state = FUNC1;
-				else if (Button_getState(GPIOD) & (1<<BUTTON_2)) state = FUNC2;
-				else if (Button_getState(GPIOD) & (1<<BUTTON_3)) state = FUNC3;
-				else state = FUNC4;
-			break;
-		}
-    }
-    return 0;
-}
 
 void delay(int n)
 {
@@ -215,7 +223,9 @@ void delay(int n)
         }
     }
 }
-
+/*================== 
+     LED function
+  ================== */
 void LED_init(GPIO_TypeDef *GPIOx)
 {
     GPIOx->MODER = 0xff;
@@ -225,7 +235,9 @@ void LED_write(GPIO_TypeDef *GPIOx, uint32_t data)
 {
     GPIOx->ODR = data;
 }
-
+/*================== 
+	SWITCH function
+  ================== */
 void Switch_init(GPIO_TypeDef *GPIOx)
 {
     GPIOx->MODER = 0x00;
@@ -235,7 +247,9 @@ uint32_t Switch_read(GPIO_TypeDef *GPIOx)
 {
     return GPIOx->IDR;
 }
-
+/*================== 
+	 BTN function
+  ================== */
 void Button_init(GPIO_TypeDef *GPIOx)
 {
     GPIOx->MODER = 0x00;
@@ -245,7 +259,9 @@ uint32_t Button_getState(GPIO_TypeDef *GPIOx)
 {
     return GPIOx->IDR;
 }
-
+/*================== 
+	  FND function
+  ================== */
 void FND_init(FND_TypeDef *fnd, uint32_t ON_OFF)
 {
     fnd->FCR = ON_OFF;
@@ -295,8 +311,3 @@ void TIM_clear(TIM_TypeDef *tim)
 	tim->TCR |= (1<<1); // set clear bit;
 	tim->TCR &= ~(1<<1); // reset clear bit;
 }
-
-/*================== 
-	button driver
-  ================== */
-
