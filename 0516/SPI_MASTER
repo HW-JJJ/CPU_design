@@ -1,0 +1,134 @@
+`timescale 1ns / 1ps
+
+module SPI_MASTER(
+    input  logic       clk,
+    input  logic       reset,
+    // MASTER - SLAVE
+    output logic       SCLK,
+    output logic       MOSI,
+    input  logic       MISO,
+    output logic       CSn,
+    // TX
+    input  logic [7:0] tx_data,
+    input  logic       start,
+    // RX
+    output logic [7:0] rx_data,
+    output logic       done,
+    output logic       ready
+);
+    parameter SCLK_FREQ = 100;  
+
+    typedef enum bit { IDLE, CP0, CP1 } state_e;
+    state_e state, state_next;
+
+    logic done_reg, done_next;
+    logic ready_reg, ready_next;
+    logic SCLK_reg, SCLK_next;
+    logic CSn_reg, CSn_next;
+    logic MOSI_reg, MOSI_next;
+
+    logic [$clog2(SCLK_FREQ)-1:0] sclk_count_reg, sclk_count_next;
+    logic [2:0] bit_count_reg, bit_count_next;
+    logic [7:0] temp_data_reg, temp_data_next;
+    logic [7:0] rx_data_reg, rx_data_next;
+
+    assign SCLK    = SCLK_reg;
+    assign CSn     = CSn_reg;
+    assign done    = done_reg;
+    assign ready   = ready_reg;
+    assign MOSI    = MOSI_reg;
+    assign rx_data = rx_data_reg;
+
+    always_ff @( posedge clk or posedge reset) begin 
+        if (reset) begin
+            state          <= IDLE;
+            SCLK_reg       <= 1'b0;
+            CSn_reg        <= 1'b1;
+            sclk_count_reg <= 0;
+            bit_count_reg  <= 3'b0;
+            done_reg       <= 1'b0;
+            temp_data_reg  <= 8'b0;
+            rx_data_reg  <= 8'b0;
+            MOSI_reg       <= 1'b0;
+            ready_reg      <= 1'b1;
+        end
+        else begin
+            state          <= state_next;
+            SCLK_reg       <= SCLK_next;
+            CSn_reg        <= CSn_next;
+            sclk_count_reg <= sclk_count_next;
+            bit_count_reg  <= bit_count_next;
+            done_reg       <= done_next;
+            temp_data_reg  <= temp_data_next;
+            rx_data_reg  <= rx_data_next;
+            MOSI_reg       <= MOSI_next;
+            ready_reg      <= ready_next;
+        end
+    end
+
+    always_comb begin 
+        state_next      = state;
+        SCLK_next       = SCLK_reg;
+        CSn_next        = CSn_reg;
+        sclk_count_next = sclk_count_reg;
+        bit_count_next  = bit_count_reg;
+        temp_data_next  = temp_data_reg;
+        rx_data_next    = rx_data_reg;
+        done_next       = done_reg;
+        MOSI_next       = MOSI_reg;
+        ready_next      = ready_reg;
+
+        case (state)
+            IDLE : begin
+                SCLK_next  = 1'b0;
+                CSn_next   = 1'b1;
+                done_next  = 1'b0;
+                ready_next = 1'b1;
+                temp_data_next = 8'bz;
+                
+                if (start) begin
+                    state_next = CP0;
+                    temp_data_next = tx_data;
+                end
+            end
+
+            CP0 : begin
+                SCLK_next  = 1'b0;
+                CSn_next   = 1'b0;
+                ready_next = 1'b0;
+                MOSI_next  = temp_data_reg[7];
+
+                if (sclk_count_reg == 49) begin
+                    state_next = CP1;
+                    sclk_count_next = 0;
+                    rx_data_next = {rx_data_reg[6:0],MISO};
+                end
+                else begin
+                    sclk_count_next = sclk_count_reg + 1;
+                end
+            end
+
+            CP1 : begin
+                SCLK_next = 1'b1;
+
+                if(sclk_count_reg == 49) begin     
+                    sclk_count_next = 0;
+                    temp_data_next = {temp_data_reg[6:0],1'b0};
+
+                    if (bit_count_reg == 7) begin
+                        state_next     = IDLE;
+                        done_next      = 1'b1;
+                        bit_count_next = 0;
+                    end
+                    else begin
+                        state_next = CP0;
+                        bit_count_next = bit_count_reg + 1;
+                    end
+                end
+                else begin
+                    sclk_count_next = sclk_count_reg + 1;
+                end
+            end
+        endcase
+    end
+endmodule
