@@ -1,0 +1,324 @@
+`timescale 1ns / 1ps
+
+module I2C_MASTER(
+    input        clk,        // 100 MHz system clock
+    input        reset,      // synchronous reset
+    input  [7:0] tx_data,    // {7-bit addr, R/W bit}
+    input        start,      // pulse: begin transaction
+    input        stop,       // pulse: end transaction (Stop)
+    input        i2c_en,     // master enable
+    inout        SDA,        // open-drain data line
+    output reg   SCL,        // clock line (driven explicitly per state)
+    output reg   ready,      // high when can accept new start
+    output reg   tx_done     // high one cycle when Stop complete
+);
+
+    // State encoding
+    localparam 
+      IDLE         =  0,
+      START1       =  1,
+      START2       =  2,
+      ADDR1        =  3,
+      ADDR2        =  4,
+      ADDR3        =  5,
+      ADDR4        =  6,
+      ACK1         =  7,
+      ACK2         =  8,
+      ACK3         =  9,
+      ACK4         = 10,
+      DECODE       = 11,
+      DATA1        = 12,
+      DATA2        = 13,
+      DATA3        = 14,
+      DATA4        = 15,
+      MASTER_ACK1  = 16,
+      MASTER_ACK2  = 17,
+      MASTER_ACK3  = 18,
+      MASTER_ACK4  = 19,
+      READ1        = 20,
+      READ2        = 21,
+      READ3        = 22,
+      READ4        = 23,
+      HOLD         = 24,
+      STOP1        = 25,
+      STOP2        = 26,
+      STOP3        = 27;
+
+    // Registers & wires
+    reg [4:0] state, next;
+    reg [2:0] bit_cnt, next_bit_cnt;
+    reg [7:0] shift_reg, next_shift_reg;
+    reg       rw_bit, next_rw_bit;
+    reg [8:0] clk_cnt, next_clk_cnt;        // count 0..499
+    reg       sda_out, sda_oe;
+    reg       next_sda_out, next_sda_oe;
+    reg       next_ready, next_tx_done;
+    wire      sda_in;
+
+    assign SDA    = sda_oe ? sda_out : 1'bz;
+    assign sda_in = SDA;
+
+    // Sequential: state & registers update
+    always @(posedge clk or posedge reset) begin
+        if (reset) begin
+            state        <= IDLE;
+            clk_cnt      <= 0;
+            bit_cnt      <= 0;
+            shift_reg    <= 0;
+            rw_bit       <= 0;
+            sda_out      <= 1;
+            sda_oe       <= 1;
+            ready        <= 1;
+            tx_done      <= 0;
+            SCL          <= 1;
+        end else begin
+            state        <= next;
+            clk_cnt      <= next_clk_cnt;
+            bit_cnt      <= next_bit_cnt;
+            shift_reg    <= next_shift_reg;
+            rw_bit       <= next_rw_bit;
+            sda_out      <= next_sda_out;
+            sda_oe       <= next_sda_oe;
+            ready        <= next_ready;
+            tx_done      <= next_tx_done;
+        end
+    end
+
+    // Combinational: next-state & output logic
+    always @(*) begin
+        // defaults
+        next            = state;
+        next_clk_cnt    = clk_cnt;
+        next_bit_cnt    = bit_cnt;
+        next_shift_reg  = shift_reg;
+        next_rw_bit     = rw_bit;
+        next_sda_out    = sda_out;
+        next_sda_oe     = sda_oe;
+        next_ready      = 1'b0;
+        next_tx_done    = 1'b0;
+        SCL             = 1'b1;
+
+        case (state)
+        IDLE: begin
+            SCL          = 1'b1;
+            next_sda_oe  = 1'b1;  next_sda_out = 1'b1;
+            next_ready   = i2c_en ? 1'b1 : 1'b0;
+            if (i2c_en && start) begin
+                next            = START1;
+                next_shift_reg  = tx_data;
+                next_rw_bit     = tx_data[0];
+                next_bit_cnt    = 0;
+                next_clk_cnt    = 0;
+                next_ready      = 1'b0;
+            end
+        end
+
+        START1: begin
+            SCL            = 1'b1;
+            next_sda_oe    = 1'b1;  next_sda_out = 1'b0;
+            if (clk_cnt == 499) begin next_clk_cnt = 0; next = START2; end
+            else                next_clk_cnt = clk_cnt + 1;
+        end
+
+        START2: begin
+            SCL            = 1'b0;
+            next_sda_oe    = 1'b1;  next_sda_out = 1'b0;
+            if (clk_cnt == 499) begin next_clk_cnt = 0; next = ADDR1; end
+            else                next_clk_cnt = clk_cnt + 1;
+        end
+
+        // Address & R/W bits
+        ADDR1: begin
+            SCL            = 1'b0;
+            next_sda_oe    = 1'b1;  next_sda_out = shift_reg[7];
+            if (clk_cnt == 249) begin next_clk_cnt = 0; next = ADDR2; end
+            else                next_clk_cnt = clk_cnt + 1;
+        end
+        ADDR2: begin
+            SCL            = 1'b1;
+            next_sda_oe    = 1'b1;  next_sda_out = shift_reg[7];
+            if (clk_cnt == 249) begin
+                next_clk_cnt   = 0;
+                if (bit_cnt == 7) begin
+                    next = ACK1;
+                    next_bit_cnt = 0;
+                end else begin
+                    next_shift_reg = {shift_reg[6:0],1'b0};
+                    next_bit_cnt   = bit_cnt + 1;
+                    next           = ADDR3;
+                end
+            end else next_clk_cnt = clk_cnt + 1;
+        end
+        ADDR3: begin
+            SCL            = 1'b1;
+            next_sda_oe    = 1'b1;  next_sda_out = shift_reg[7];
+            if (clk_cnt == 249) begin next_clk_cnt = 0; next = ADDR4; end
+            else                next_clk_cnt = clk_cnt + 1;
+        end
+        ADDR4: begin
+            SCL            = 1'b0;
+            next_sda_oe    = 1'b1;  next_sda_out = shift_reg[7];
+            if (clk_cnt == 249) begin next_clk_cnt = 0; next = ACK1; end
+            else                next_clk_cnt = clk_cnt + 1;
+        end
+
+        // ACK from slave
+        ACK1: begin
+            SCL            = 1'b0;
+            next_sda_oe    = 1'b0; // release SDA for ACK
+            if (clk_cnt == 249) begin next_clk_cnt = 0; next = ACK2; end
+            else                next_clk_cnt = clk_cnt + 1;
+        end
+        ACK2: begin
+            SCL            = 1'b1;
+            if (clk_cnt == 249) begin next_clk_cnt = 0; next = ACK3; end
+            else                next_clk_cnt = clk_cnt + 1;
+        end
+        ACK3: begin
+            SCL            = 1'b1;
+            if (clk_cnt == 249) begin next_clk_cnt = 0; next = ACK4; end
+            else                next_clk_cnt = clk_cnt + 1;
+        end
+        ACK4: begin
+            SCL            = 1'b0;
+            next_sda_oe    = 1'b1;  next_sda_out = 1'b0; // reclaim SDA
+            if (clk_cnt == 249) begin next_clk_cnt = 0; next = DECODE; end
+            else                next_clk_cnt = clk_cnt + 1;
+        end
+
+        // Branch on R/W bit
+        DECODE: begin
+            SCL            = 1'b0;
+            if (rw_bit == 1'b0) begin
+                next_shift_reg = tx_data;  // load next data byte externally
+                next_bit_cnt   = 0;
+                next_clk_cnt   = 0;
+                next           = DATA1;
+            end else begin
+                next_bit_cnt   = 0;
+                next_clk_cnt   = 0;
+                next           = READ1;
+            end
+        end
+
+        // WRITE data byte
+        DATA1: begin
+            SCL            = 1'b0;
+            next_sda_oe    = 1'b1;  next_sda_out = shift_reg[7];
+            if (clk_cnt == 249) begin next_clk_cnt = 0; next = DATA2; end
+            else                next_clk_cnt = clk_cnt + 1;
+        end
+        DATA2: begin
+            SCL            = 1'b1;
+            next_sda_oe    = 1'b1;  next_sda_out = shift_reg[7];
+            if (clk_cnt == 249) begin
+                next_clk_cnt = 0;
+                if (bit_cnt == 7) begin
+                    next = MASTER_ACK1;
+                    next_bit_cnt = 0;
+                end else begin
+                    next_shift_reg = {shift_reg[6:0],1'b0};
+                    next_bit_cnt   = bit_cnt + 1;
+                    next           = DATA3;
+                end
+            end else next_clk_cnt = clk_cnt + 1;
+        end
+        DATA3: begin
+            SCL            = 1'b1;
+            next_sda_oe    = 1'b1;  next_sda_out = shift_reg[7];
+            if (clk_cnt == 249) begin next_clk_cnt = 0; next = DATA4; end
+            else                next_clk_cnt = clk_cnt + 1;
+        end
+        DATA4: begin
+            SCL            = 1'b0;
+            next_sda_oe    = 1'b1;  next_sda_out = shift_reg[7];
+            if (clk_cnt == 249) begin next_clk_cnt = 0; next = MASTER_ACK1; end
+            else                next_clk_cnt = clk_cnt + 1;
+        end
+
+        // MASTER → Slave ACK/NACK
+        MASTER_ACK1: begin
+            SCL            = 1'b0;
+            next_sda_oe    = 1'b1;  next_sda_out = 1'b0; // ACK
+            if (clk_cnt == 249) begin next_clk_cnt = 0; next = MASTER_ACK2; end
+            else                next_clk_cnt = clk_cnt + 1;
+        end
+        MASTER_ACK2: begin
+            SCL            = 1'b1;
+            if (clk_cnt == 249) begin next_clk_cnt = 0; next = MASTER_ACK3; end
+            else                next_clk_cnt = clk_cnt + 1;
+        end
+        MASTER_ACK3: begin
+            SCL            = 1'b1;
+            if (clk_cnt == 249) begin next_clk_cnt = 0; next = MASTER_ACK4; end
+            else                next_clk_cnt = clk_cnt + 1;
+        end
+        MASTER_ACK4: begin
+            SCL            = 1'b0;
+            if (clk_cnt == 249) begin
+                next_clk_cnt = 0;
+                next         = stop ? STOP1 : HOLD;
+            end else next_clk_cnt = clk_cnt + 1;
+        end
+
+        // READ from slave
+        READ1: begin
+            SCL            = 1'b0;
+            next_sda_oe    = 1'b0; // release SDA for input
+            if (clk_cnt == 249) begin next_clk_cnt = 0; next = READ2; end
+            else                next_clk_cnt = clk_cnt + 1;
+        end
+        READ2: begin
+            SCL            = 1'b1;
+            if (clk_cnt == 249) begin
+                next_shift_reg = {shift_reg[6:0],sda_in};
+                next_clk_cnt   = 0;
+                next           = READ3;
+            end else next_clk_cnt = clk_cnt + 1;
+        end
+        READ3: begin
+            SCL            = 1'b1;
+            if (clk_cnt == 249) begin next_clk_cnt = 0; next = READ4; end
+            else                next_clk_cnt = clk_cnt + 1;
+        end
+        READ4: begin
+            SCL            = 1'b0;
+            if (clk_cnt == 249) begin
+                next         = (bit_cnt == 7) ? MASTER_ACK1 : READ1;
+                next_bit_cnt = (bit_cnt == 7) ? 0 : bit_cnt + 1;
+                next_clk_cnt = 0;
+            end else next_clk_cnt = clk_cnt + 1;
+        end
+
+        HOLD: begin
+            SCL            = 1'b1;
+            if (stop)        next = STOP1;
+            else if (rw_bit==0) next = DATA1;
+            else               next = READ1;
+        end
+
+        // STOP Condition
+        STOP1: begin
+            SCL            = 1'b0;
+            if (clk_cnt == 499) begin next_clk_cnt = 0; next = STOP2; end
+            else                next_clk_cnt = clk_cnt + 1;
+        end
+        STOP2: begin
+            SCL            = 1'b1;
+            if (clk_cnt == 499) begin next_clk_cnt = 0; next = STOP3; end
+            else                next_clk_cnt = clk_cnt + 1;
+        end
+        STOP3: begin
+            SCL            = 1'b1;
+            next_ready     = 1'b1;
+            next_tx_done   = 1'b1;
+            if (clk_cnt == 499) begin next_clk_cnt = 0; next = IDLE; end
+            else                next_clk_cnt = clk_cnt + 1;
+        end
+
+        default: begin
+            next = IDLE;
+        end
+        endcase
+    end
+endmodule
