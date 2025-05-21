@@ -1,0 +1,220 @@
+`timescale 1ns / 1ps
+
+module I2C_MASTER(
+    input       clk,
+    input       reset,
+    // internal signal
+    input [7:0] tx_data,
+    output reg  tx_done,
+    output reg  ready,
+    //
+    input       start,
+    input       stop,
+    input       i2c_en,
+    // master - slave
+    output reg SDA,
+    output reg SCL
+);
+    localparam IDLE   = 0,
+               START1 = 1,
+               START2 = 2,
+               ADDR1  = 3,
+               ADDR2  = 4,
+               ADDR3  = 5,
+               ADDR4  = 6,
+               ACK1   = 7,
+               ACK2   = 8,
+               ACK3   = 9,
+               ACK4   = 10,
+               HOLD   = 11;
+
+    reg [2:0] state, next;
+    reg [2:0] bit_count_reg, bit_count_next;
+    reg [7:0] temp_tx_data_reg, temp_tx_data_next;
+    reg [$clog2(500)-1:0] clk_count_reg, clk_count_next; // data rate 100KHz 
+
+    always @( posedge clk, posedge reset) begin
+        if (reset) begin
+            state            <= IDLE;
+            bit_count_reg    <= 0;
+            temp_tx_data_reg <= 0;
+            clk_count_reg    <= 0;
+        end
+        else begin
+            state            <= next;
+            bit_count_reg    <= bit_count_next;
+            temp_tx_data_reg <= temp_tx_data_next;
+            clk_count_reg    <= clk_count_next;
+        end
+    end
+
+    always @(*) begin
+        next              = state;
+        bit_count_next    = bit_count_reg;
+        temp_tx_data_next = temp_tx_data_reg;
+        clk_count_next    = clk_count_reg;
+        SDA = 1'b1;
+        SCL = 1'b1;
+        ready = 1'b1;
+        tx_done = 1'b0;
+
+        case(state)
+            IDLE : begin
+                SDA     = 1'b1;
+                SCL     = 1'b1;
+                ready   = 1'b1;
+                tx_done = 1'b0;
+
+                if (i2c_en && start) begin
+                    next  = START1;
+                    ready = 1'b0;
+                    temp_tx_data_next = tx_data;
+                end
+            end
+
+            START1 : begin
+                SDA = 1'b0;
+                SCL = 1'b1;
+
+                if (clk_count_reg == 499) begin
+                    next = START2;
+                    clk_count_next = 0;
+                end
+                else begin
+                    clk_count_next = clk_count_reg + 1;
+                end
+            end
+
+            START2 : begin
+                SDA = 1'b0;
+                SCL = 1'b0;
+
+                if (clk_count_reg == 499) begin
+                    next = ADDR1;
+                    clk_count_next = 0;
+                end
+                else begin
+                    clk_count_next = clk_count_reg + 1;
+                end
+            end
+
+            ADDR1 : begin
+                SDA = temp_tx_data_reg[7];
+                SCL = 1'b0;
+
+                if (clk_count_reg == 249) begin
+                    next = ADDR2;
+                    clk_count_next = 0;
+                end
+                else begin
+                    clk_count_next = clk_count_reg + 1;
+                end                    
+            end
+
+            ADDR2 : begin
+                SDA = temp_tx_data_reg[7];
+                SCL = 1'b1;
+
+                if (clk_count_reg == 249) begin
+                    next = ADDR3;
+                    clk_count_next = 0;
+                end
+                else begin
+                    clk_count_next = clk_count_reg + 1;
+                end                    
+            end
+
+            ADDR3 : begin
+                SDA = temp_tx_data_reg[7];
+                SCL = 1'b1;
+
+                if (clk_count_reg == 249) begin
+                    next = ADDR4;
+                    clk_count_next = 0;
+                end
+                else begin
+                    clk_count_next = clk_count_reg + 1;
+                end                    
+            end
+
+            ADDR4 : begin
+                SDA = temp_tx_data_reg[7];
+                SCL = 1'b0;
+
+                if (clk_count_reg == 249) begin
+                    clk_count_next = 0;
+                    
+                    if (bit_count_reg == 7) begin
+                        next = ACK1;
+                        bit_count_next = 0;
+                    end
+                    else begin
+                        next = ADDR1; 
+                        temp_tx_data_next = {temp_tx_data_reg[6:0],1'b0};
+                        bit_count_next = bit_count_reg + 1;
+                    end
+                end
+                else begin
+                    clk_count_next = clk_count_reg + 1;
+                end                    
+            end
+
+            ACK1 : begin
+                SDA = 1'b0;
+                SCL = 1'b0;
+
+                if (clk_count_reg == 249) begin
+                    next = ACK2;
+                    clk_count_next = 0;
+                end
+                else begin
+                    clk_count_next = clk_count_reg + 1;
+                end        
+            end
+
+            ACK2 : begin
+                SDA = 1'b0;
+                SCL = 1'b1;
+
+                if (clk_count_reg == 249) begin
+                    next = ACK3;
+                    clk_count_next = 0;
+                end
+                else begin
+                    clk_count_next = clk_count_reg + 1;
+                end        
+            end
+
+            ACK3 : begin
+                SDA = 1'b0;
+                SCL = 1'b1;
+
+                if (clk_count_reg == 249) begin
+                    next = ACK4;
+                    clk_count_next = 0;
+                end
+                else begin
+                    clk_count_next = clk_count_reg + 1;
+                end        
+            end
+
+            ACK4 : begin
+                SDA = 1'b0;
+                SCL = 1'b0;
+
+                if (clk_count_reg == 249) begin
+                    next = HOLD;
+                    clk_count_next = 0;
+                end
+                else begin
+                    clk_count_next = clk_count_reg + 1;
+                end        
+            end
+            
+            HOLD : begin
+                SDA = 1'b0;
+                SCL = 1'b0;
+            end
+        endcase
+    end
+endmodule
