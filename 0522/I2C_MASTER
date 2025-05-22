@@ -1,0 +1,245 @@
+`timescale 1ns / 1ps
+
+module I2C_MASTER(
+    input        clk,
+    input        reset,
+    // INTERNAL SIGNALS
+    input  [7:0] tx_data,
+    output reg   tx_done,
+    output reg   ready,
+    // CONTROL
+    input        start,
+    input        stop,
+    input        i2c_en,
+    // I2C BUS
+    inout        SDA,
+    output reg   SCL
+);
+    // state encoding
+    localparam IDLE   = 0,
+               START1 = 1,
+               START2 = 2,
+               DATA1  = 3,
+               DATA2  = 4,
+               DATA3  = 5,
+               DATA4  = 6,
+               ACK1   = 7,
+               ACK2   = 8,
+               ACK3   = 9,
+               ACK4   = 10,
+               HOLD   = 11,
+               STOP1  = 12,
+               STOP2  = 13;
+
+    // tri‐state SDA
+    reg        sda_o, sda_oe;
+    wire       sda_i;
+
+    assign SDA   = sda_oe ? sda_o : 1'bz;
+    assign sda_i = SDA;
+
+    // internal registers
+    reg        ack_bit;
+    reg        rw_reg, rw_next;
+    reg  [3:0] state, next;
+    reg  [7:0] temp_data_reg, temp_data_next;
+    reg  [2:0] bit_cnt, bit_cnt_next;
+    reg  [8:0] clk_cnt, clk_cnt_next;
+
+    always @(posedge clk or posedge reset) begin
+        if (reset) begin
+            state      <= IDLE;
+            bit_cnt    <= 0;
+            temp_data_reg   <= 0;
+            rw_reg     <= 0;
+            clk_cnt    <= 0;
+        end else begin
+            state      <= next;
+            bit_cnt    <= bit_cnt_next;
+            temp_data_reg   <= temp_data_next;
+            rw_reg     <= rw_next;
+            clk_cnt    <= clk_cnt_next;
+        end
+    end
+
+    always @(*) begin
+        next           = state;
+        bit_cnt_next   = bit_cnt;
+        clk_cnt_next   = clk_cnt;
+        temp_data_next = temp_data_reg;
+        rw_next        = rw_reg;
+        sda_o          = 1'b1;
+        sda_oe         = 1'b0;
+        SCL            = 1'b1;
+        ready          = 1'b0;
+        tx_done        = 1'b0;
+
+        case (state)
+            IDLE: begin
+                ready = 1'b1;
+                if (i2c_en && start) begin
+                    next            = START1;
+                    bit_cnt_next    = 0;
+                    clk_cnt_next    = 0;
+                end
+            end
+            
+            // START PHASE
+            START1: begin
+                sda_oe = 1'b1; sda_o = 1'b0; 
+                SCL = 1'b1;
+                temp_data_next = tx_data;
+                rw_next        = tx_data[0];
+                bit_cnt_next   = 0;
+                
+                if (clk_cnt == 499) begin
+                    next         = START2;
+                    clk_cnt_next = 0;
+                end else begin
+                    clk_cnt_next = clk_cnt + 1;
+                end
+            end
+
+            START2: begin
+                sda_oe = 1'b1; sda_o = 1'b0; 
+                SCL = 1'b0;
+                if (clk_cnt == 499) begin
+                    next         = DATA1;
+                    clk_cnt_next = 0;
+                end else begin
+                    clk_cnt_next = clk_cnt + 1;
+                end
+            end
+
+            // DATA phases
+            DATA1: begin 
+                sda_oe = 1; sda_o = temp_data_reg[7]; 
+                SCL = 1'b0;
+                if (clk_cnt == 249) begin 
+                    next = DATA2; 
+                    clk_cnt_next = 0; 
+                end
+                else clk_cnt_next = clk_cnt + 1;
+            end
+            DATA2: begin 
+                sda_oe = 1; sda_o = temp_data_reg[7]; 
+                SCL = 1'b1;
+                if (clk_cnt == 249) begin 
+                    next = DATA3; 
+                    clk_cnt_next = 0; 
+                end
+                else clk_cnt_next = clk_cnt + 1;
+            end
+            DATA3: begin 
+                sda_oe = 1; sda_o = temp_data_reg[7]; 
+                SCL = 1'b1;
+                if (clk_cnt == 249) begin 
+                    next = DATA4; 
+                    clk_cnt_next = 0; 
+                end
+                else clk_cnt_next = clk_cnt + 1;
+            end
+            DATA4: begin 
+                sda_oe = 1; sda_o = temp_data_reg[7]; 
+                SCL = 1'b0;
+                if (clk_cnt == 249) begin
+                    clk_cnt_next = 0;
+                    if (bit_cnt == 7) begin
+                        next         = ACK1;
+                        bit_cnt_next = 0;
+                    end else begin
+                        next            = DATA1;
+                        bit_cnt_next    = bit_cnt + 1;
+                        temp_data_next  = {temp_data_reg[6:0], 1'b0};
+                    end
+                end else clk_cnt_next = clk_cnt + 1;
+            end
+
+            // ACK phases
+            ACK1: begin 
+                sda_oe = 1'b0; 
+                SCL    = 1'b0;
+                if (clk_cnt == 249) begin 
+                    next         = ACK2;
+                    clk_cnt_next = 0;
+                end
+                else clk_cnt_next = clk_cnt + 1;
+            end
+            ACK2: begin 
+                sda_oe = 1'b0; 
+                SCL    = 1'b1;
+                if (clk_cnt == 249) begin 
+                    next         = ACK3;
+                    ack_bit      = sda_i;
+                    clk_cnt_next = 0;
+                end
+                else clk_cnt_next = clk_cnt + 1;
+            end
+            ACK3: begin 
+                sda_oe = 1'b0; 
+                SCL    = 1'b1;
+                if (clk_cnt == 249) begin 
+                    next         = ACK4;
+                    clk_cnt_next = 0;
+                end
+                else clk_cnt_next = clk_cnt + 1;
+            end
+            ACK4: begin 
+                sda_oe = 1'b0; 
+                SCL    = 1'b0;
+                if (clk_cnt == 249) begin
+                    clk_cnt_next = 0;
+                    // 0 : ACK , 1: NACK
+                    next = (ack_bit == 1'b0) ? HOLD : IDLE;
+                end 
+                else clk_cnt_next = clk_cnt + 1;
+            end
+
+            // HOLD
+            HOLD: begin
+                sda_oe  = 1'b1; sda_o = 1'b0;
+                SCL     = 1'b0;
+                tx_done = 1'b1; 
+                ready   = 1'b1;
+                if (clk_cnt < 499) begin
+                    clk_cnt_next = clk_cnt + 1;
+                end 
+                else begin
+                    clk_cnt_next = 0;
+                    if (stop) begin
+                        next = STOP1;
+                    end 
+                    else if (rw_reg == 1'b0) begin
+                        next = DATA1;  
+                    end 
+                    else if (start) begin
+                        next = START1;
+                    end
+                    else begin
+                        next = STOP1;
+                    end
+                end
+            end
+
+            // STOP condition
+            STOP1: begin 
+                sda_oe = 1'b1; sda_o = 1'b0;
+                SCL    = 1'b1;
+                if (clk_cnt == 499) begin 
+                    next         = STOP2;
+                    clk_cnt_next = 0;
+                end
+                else clk_cnt_next = clk_cnt + 1;
+            end
+            STOP2: begin 
+                sda_oe = 1'b1; sda_o = 1'b1;
+                SCL    = 1'b1;
+                if (clk_cnt == 499) begin 
+                    next         = IDLE;
+                    clk_cnt_next = 0;
+                end
+                else clk_cnt_next = clk_cnt + 1;
+            end
+        endcase
+    end
+endmodule
